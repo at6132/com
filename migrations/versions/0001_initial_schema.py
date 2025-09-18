@@ -175,13 +175,12 @@ def upgrade() -> None:
     op.create_index('idx_api_keys_owner', 'api_keys', ['owner'], unique=False)
     op.create_index('idx_api_keys_active', 'api_keys', ['is_active'], unique=False)
 
-    # Add foreign key constraints
-    op.create_foreign_key('fk_orders_position_ref', 'orders', 'positions', ['position_ref'], ['position_ref'])
+    # Note: Foreign key constraints removed for SQLite compatibility
+    # The position_ref column exists but without formal foreign key constraint
 
 
 def downgrade() -> None:
-    # Remove foreign key constraints
-    op.drop_constraint('fk_orders_position_ref', 'orders', type_='foreignkey')
+    # Note: No foreign key constraints to remove
     
     # Drop tables in reverse order
     op.drop_table('api_keys')

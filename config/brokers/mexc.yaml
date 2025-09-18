@@ -1,7 +1,7 @@
 name: MEXC
 enabled: true
 environment: paper
-token: "WEB9ee8cd1faeeb30f1836c151930a89a289adbdb4193de6cbd0d25c91ed6c0c1bd"
+token: "WEBb66beaba64d736678f79ba9350bebde4fa415424aa4e85aae80378175aa2e735"
 base_url: "https://futures.mexc.com"  # Futures API base URL
 timeout: 30
 max_retries: 3
