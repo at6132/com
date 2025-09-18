@@ -42,6 +42,7 @@ class WSSubscribeMessage(WSMessage):
     """WebSocket subscription message"""
     type: str = Field(default="SUBSCRIBE", description="Message type")
     strategy_id: str = Field(description="Strategy ID to subscribe to")
+    events: Optional[List[str]] = Field(default=None, description="Optional list of event types to subscribe to")
     
     model_config = ConfigDict(extra="forbid")
 

@@ -29,6 +29,7 @@ class ConnectionManager:
         self.subscriptions: Dict[str, Set[str]] = {}  # strategy_id -> set of connection_ids
         self.authenticated_connections: Set[str] = set()  # Set of authenticated connection IDs
         self.connection_strategies: Dict[str, Set[str]] = {}  # connection_id -> set of strategy_ids
+        self.connection_event_filters: Dict[str, Dict[str, Set[str]]] = {}  # connection_id -> {strategy_id -> set of event_types}
         self.connection_last_ping: Dict[str, float] = {}  # connection_id -> last ping time
         self.connection_last_pong: Dict[str, float] = {}  # connection_id -> last pong time
         self.heartbeat_interval = 30  # Send heartbeat every 30 seconds
@@ -40,6 +41,7 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[connection_id] = websocket
         self.connection_strategies[connection_id] = set()
+        self.connection_event_filters[connection_id] = {}
         current_time = time.time()
         self.connection_last_ping[connection_id] = current_time
         self.connection_last_pong[connection_id] = current_time
@@ -63,6 +65,10 @@ class ConnectionManager:
                     if not self.subscriptions[strategy_id]:
                         del self.subscriptions[strategy_id]
             del self.connection_strategies[connection_id]
+        
+        # Remove event filters
+        if connection_id in self.connection_event_filters:
+            del self.connection_event_filters[connection_id]
         
         # Remove from authenticated set
         self.authenticated_connections.discard(connection_id)
@@ -184,7 +190,16 @@ class ConnectionManager:
         # Add to connection strategies
         self.connection_strategies[connection_id].add(strategy_id)
         
-        logger.info(f"Connection {connection_id} subscribed to {strategy_id}")
+        # Store event filters if provided
+        if subscribe_message.events:
+            self.connection_event_filters[connection_id][strategy_id] = set(subscribe_message.events)
+            logger.info(f"Connection {connection_id} subscribed to {strategy_id} with event filters: {subscribe_message.events}")
+        else:
+            # If no filters specified, subscribe to all events (remove any existing filters)
+            if strategy_id in self.connection_event_filters[connection_id]:
+                del self.connection_event_filters[connection_id][strategy_id]
+            logger.info(f"Connection {connection_id} subscribed to {strategy_id} (all events)")
+        
         return WSSubscribeResponse(status="SUBSCRIBED", strategy_id=strategy_id)
     
     async def unsubscribe(self, connection_id: str, unsubscribe_message: WSUnsubscribeMessage) -> WSSubscribeResponse:
@@ -200,6 +215,10 @@ class ConnectionManager:
         # Remove from connection strategies
         if connection_id in self.connection_strategies:
             self.connection_strategies[connection_id].discard(strategy_id)
+        
+        # Remove event filters for this strategy
+        if connection_id in self.connection_event_filters and strategy_id in self.connection_event_filters[connection_id]:
+            del self.connection_event_filters[connection_id][strategy_id]
         
         logger.info(f"Connection {connection_id} unsubscribed from strategy {strategy_id}")
         return WSSubscribeResponse(status="UNSUBSCRIBED", strategy_id=strategy_id)
@@ -222,11 +241,21 @@ class ConnectionManager:
         
         for connection_id in self.subscriptions[strategy_id]:
             if connection_id in self.active_connections:
-                try:
-                    await self.active_connections[connection_id].send_text(event_json)
-                except Exception as e:
-                    logger.error(f"Failed to send event to {connection_id}: {e}")
-                    disconnected_connections.append(connection_id)
+                # Check if connection has event filters for this strategy
+                should_send = True
+                if (connection_id in self.connection_event_filters and 
+                    strategy_id in self.connection_event_filters[connection_id]):
+                    # Apply event filter - only send if event type is in the filter
+                    event_filters = self.connection_event_filters[connection_id][strategy_id]
+                    if event.event_type.value not in event_filters:
+                        should_send = False
+                
+                if should_send:
+                    try:
+                        await self.active_connections[connection_id].send_text(event_json)
+                    except Exception as e:
+                        logger.error(f"Failed to send event to {connection_id}: {e}")
+                        disconnected_connections.append(connection_id)
             else:
                 disconnected_connections.append(connection_id)
         
