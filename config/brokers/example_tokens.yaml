@@ -1,0 +1,28 @@
+name: EXAMPLE_TOKENS_BROKER
+enabled: false  # Disabled by default
+environment: paper
+base_url: "https://api.example.com"
+timeout: 30
+max_retries: 3
+
+# Base unit configuration - this broker expects quantities in tokens (no conversion needed)
+base_unit: tokens
+# No base_unit_conversion needed - quantities are used as-is
+
+features:
+  supports_stop_loss: true
+  supports_take_profit: true
+  supports_post_only: true
+  supports_oco: false
+  supports_trailing_stop: false
+
+markets:
+  crypto_perp:
+    symbols:
+      BTC_USDT:
+        tick_size: 0.1
+        lot_size: 0.001
+        min_order_size: 0.001
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 100

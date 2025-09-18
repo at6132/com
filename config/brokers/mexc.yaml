@@ -1,0 +1,152 @@
+name: MEXC
+enabled: true
+environment: paper
+token: "WEB9ee8cd1faeeb30f1836c151930a89a289adbdb4193de6cbd0d25c91ed6c0c1bd"
+base_url: "https://futures.mexc.com"  # Futures API base URL
+timeout: 30
+max_retries: 3
+testnet: true
+futures: true
+
+# Base unit configuration
+base_unit: contracts
+base_unit_conversion:
+  BTC_USDT: 10000.0  # 1 contract = 0.0001 BTC (1/0.0001)
+  ETH_USDT: 1000.0   # 1 contract = 0.001 ETH (1/0.001)
+  DOGE_USDT: 100.0   # 1 contract = 100 DOGE
+  ADA_USDT: 10.0     # 1 contract = 0.1 ADA (1/0.1)
+  SOL_USDT: 100.0    # 1 contract = 0.01 SOL (1/0.01)
+  MATIC_USDT: 10.0   # 1 contract = 0.1 MATIC (1/0.1)
+  LINK_USDT: 100.0   # 1 contract = 0.01 LINK (1/0.01)
+
+features:
+  supports_stop_loss: true
+  supports_take_profit: true
+  supports_post_only: true
+  supports_oco: false
+  supports_trailing_stop: false
+  unit_type: contracts
+
+markets:
+  crypto_perp:
+    symbols:
+      BTC_USDT:
+        tick_size: 0.1
+        lot_size: 0.0001
+        contract_multiplier: 1
+        min_order_size: 0.0001
+        max_order_size: 111916900
+        min_notional: 11.1916
+        max_leverage: 500
+        max_single_market_order: 16787535
+        max_open_orders: 200
+        price_protection: 0.10
+        price_cap_ratio: 0.10
+        price_floor_ratio: 0.10
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      ETH_USDT:
+        tick_size: 0.01
+        lot_size: 0.01
+        contract_multiplier: 1
+        min_order_size: 0.01
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      DOGE_USDT:
+        tick_size: 0.00001
+        lot_size: 100  # 100 DOGE per contract
+        min_order_size: 1
+        max_order_size: 7000000
+        min_notional: 1.0
+        max_single_market_order: 7000000
+        max_single_limit_order: 7000000
+        max_open_orders: 200
+        price_protection: 0.10
+        price_cap_ratio: 0.20
+        price_floor_ratio: 0.20
+        max_leverage: 300
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      ADA_USDT:
+        tick_size: 0.0001
+        lot_size: 0.1
+        contract_multiplier: 1
+        min_order_size: 0.1
+        max_order_size: 10000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      SOL_USDT:
+        tick_size: 0.01
+        lot_size: 0.01
+        contract_multiplier: 1
+        min_order_size: 0.01
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      MATIC_USDT:
+        tick_size: 0.0001
+        lot_size: 0.1
+        contract_multiplier: 1
+        min_order_size: 0.1
+        max_order_size: 10000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      LINK_USDT:
+        tick_size: 0.001
+        lot_size: 0.01
+        contract_multiplier: 1
+        min_order_size: 0.01
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      UNI_USDT:
+        tick_size: 0.001
+        lot_size: 0.01
+        contract_multiplier: 1
+        min_order_size: 0.01
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      AVAX_USDT:
+        tick_size: 0.01
+        lot_size: 0.01
+        contract_multiplier: 1
+        min_order_size: 0.01
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true
+      DOT_USDT:
+        tick_size: 0.001
+        lot_size: 0.01
+        contract_multiplier: 1
+        min_order_size: 0.01
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 125
+        supports_trigger_orders: true
+        supports_post_only: true
+        supports_reduce_only: true

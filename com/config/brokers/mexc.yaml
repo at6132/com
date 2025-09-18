@@ -1,0 +1,49 @@
+api_key: null
+base_unit: !!python/object/apply:app.config.brokers.BaseUnit
+- contracts
+base_unit_conversion:
+  BTC_USDT: 10000.0
+  ETH_USDT: 1000.0
+base_url: https://api.mexc.com
+contract_multiplier: null
+enabled: true
+environment: live
+features:
+  supports_oco: false
+  supports_post_only: true
+  supports_stop_loss: true
+  supports_take_profit: true
+  supports_trailing_stop: false
+  unit_type: contracts
+futures: true
+lot_size: null
+markets:
+  crypto_perp:
+    symbols:
+      BTC_USDT:
+        contract_multiplier: 1
+        lot_size: 0.001
+        max_leverage: 125
+        max_order_size: 1000000
+        min_notional: 5.0
+        min_order_size: 0.001
+        tick_size: 0.1
+      ETH_USDT:
+        contract_multiplier: 1
+        lot_size: 0.01
+        max_leverage: 125
+        max_order_size: 1000000
+        min_notional: 5.0
+        min_order_size: 0.01
+        tick_size: 0.01
+max_order_size: null
+max_retries: 3
+min_order_size: null
+name: MEXC
+passphrase: null
+rate_limit: null
+secret_key: null
+testnet: false
+tick_size: null
+timeout: 30
+token: null

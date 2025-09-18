@@ -1,0 +1,30 @@
+name: EXAMPLE_CURRENCY_BROKER
+enabled: false  # Disabled by default
+environment: paper
+base_url: "https://api.example.com"
+timeout: 30
+max_retries: 3
+
+# Base unit configuration - this broker expects quantities in USD
+base_unit: currency
+base_unit_conversion:
+  BTC_USDT: 50000.0  # 1 BTC = $50,000 USD (example price)
+  ETH_USDT: 3000.0   # 1 ETH = $3,000 USD (example price)
+
+features:
+  supports_stop_loss: true
+  supports_take_profit: true
+  supports_post_only: true
+  supports_oco: false
+  supports_trailing_stop: false
+
+markets:
+  crypto_perp:
+    symbols:
+      BTC_USDT:
+        tick_size: 0.1
+        lot_size: 0.001
+        min_order_size: 0.001
+        max_order_size: 1000000
+        min_notional: 5.0
+        max_leverage: 100
