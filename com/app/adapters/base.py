@@ -202,6 +202,32 @@ class BrokerAdapter(ABC):
             # BaseUnit.TOKENS - no conversion needed
             return quantity
     
+    def convert_quantity_from_broker_units(self, quantity: float, symbol: str) -> float:
+        """Convert quantity from broker's units back to base units"""
+        # Import here to avoid circular imports
+        from ..config.brokers import BaseUnit
+        
+        if not hasattr(self.config, 'base_unit'):
+            return quantity  # No conversion configured
+        
+        if self.config.base_unit == BaseUnit.CONTRACTS:
+            # Convert from contracts back to tokens using lot_size from market config
+            # For DOGE_USDT: lot_size = 100 means 1 contract = 100 DOGE
+            # So token_quantity = contract_quantity * lot_size
+            lot_size = self.get_lot_size(symbol)
+            if lot_size and lot_size > 0:
+                return quantity * lot_size
+            else:
+                # Fallback to base_unit_conversion if lot_size not found
+                conversion_factor = getattr(self.config, 'base_unit_conversion', {}).get(symbol, 1.0)
+                return quantity * conversion_factor
+        elif self.config.base_unit == BaseUnit.CURRENCY:
+            # Convert from currency back to tokens (would need price data)
+            return quantity
+        else:
+            # BaseUnit.TOKENS - no conversion needed
+            return quantity
+    
     def validate_order(self, order: OrderRequest) -> Dict[str, Any]:
         """Validate order against broker constraints"""
         errors = []

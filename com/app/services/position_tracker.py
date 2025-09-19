@@ -546,10 +546,18 @@ class PositionTracker:
                         
                         if broker_position:
                             # Update position data
-                            new_size = broker_position.get('hold_vol', 0.0)  # Use hold_vol instead of size
+                            broker_hold_vol = broker_position.get('hold_vol', 0.0)  # Broker units (contracts)
                             current_price = broker_position.get('mark_price', position.current_price)
                             unrealized_pnl = broker_position.get('unrealized_pnl', 0.0)
                             position_state = broker_position.get('state', 0)
+                            
+                            # Convert broker hold_vol to base units for comparison
+                            from ..adapters.manager import broker_manager
+                            broker = broker_manager.get_adapter("mexc")
+                            if broker:
+                                new_size = broker.convert_quantity_from_broker_units(broker_hold_vol, position.symbol)
+                            else:
+                                new_size = broker_hold_vol * 100  # Fallback: assume 100 tokens per contract
                             
                             # Check if position size changed (indicating order fills)
                             old_size = position.size
@@ -816,7 +824,7 @@ class PositionTracker:
                 order_ref = None
                 from .data_logger import data_logger
                 # Look through all TP orders for this position
-                position_orders = await data_logger.get_position_orders(position.position_id)
+                position_orders = self.get_position_orders(position.position_id)
                 for order_id in position_orders:
                     order_data = await data_logger.get_order_by_ref(order_id)
                     if order_data and order_data.get('broker_order_id') == broker_order_id:
@@ -1855,55 +1863,57 @@ class PositionTracker:
         try:
             from .orders import order_service
             from ..core.database import get_db
+            from ..schemas.orders import CreateOrderRequest
+            from ..schemas.base import Environment, Source, Instrument, InstrumentClass, OrderRequest, OrderSide, Quantity, OrderType, TimeInForce, Flags, Routing, RoutingMode, Leverage
             
             logger.info(f"⏰ Executing timestop market exit for position {position.position_id}")
             
             # Create market close order request
-            close_side = "SELL" if position.side == "BUY" else "BUY"
+            close_side = OrderSide.SELL if position.side == "BUY" else OrderSide.BUY
             
-            close_order_request = {
-                "idempotency_key": f"timestop_{position.position_id}_{int(datetime.utcnow().timestamp())}",
-                "environment": {"sandbox": True},  # TODO: Get actual environment from position
-                "source": {
-                    "strategy_id": position.strategy_id or "timestop",
-                    "instance_id": "timestop",
-                    "owner": "system"
-                },
-                "order": {
-                    "instrument": {
-                        "class": "crypto_perp",
-                        "symbol": position.symbol
-                    },
-                    "side": close_side,
-                    "quantity": {
-                        "type": "contracts",
-                        "value": position.size
-                    },
-                    "order_type": "MARKET",
-                    "time_in_force": "IOC",
-                    "flags": {
-                        "post_only": False,
-                        "reduce_only": True,
-                        "hidden": False,
-                        "iceberg": {},
-                        "allow_partial_fills": True
-                    },
-                    "routing": {
-                        "mode": "AUTO"
-                    },
-                    "leverage": {
-                        "enabled": False
-                    }
-                }
-            }
+            close_order_request = CreateOrderRequest(
+                idempotency_key=f"timestop_{position.position_id}_{int(datetime.utcnow().timestamp())}",
+                environment=Environment(sandbox=True),
+                source=Source(
+                    strategy_id=position.strategy_id or "timestop",
+                    instance_id="timestop",
+                    owner="system"
+                ),
+                order=OrderRequest(
+                    instrument=Instrument(
+                        class_=InstrumentClass.CRYPTO_PERP,
+                        symbol=position.symbol
+                    ),
+                    side=close_side,
+                    quantity=Quantity(
+                        type="contracts",
+                        value=position.size
+                    ),
+                    order_type=OrderType.MARKET,
+                    time_in_force=TimeInForce.IOC,
+                    flags=Flags(
+                        post_only=False,
+                        reduce_only=True,
+                        hidden=False,
+                        iceberg={},
+                        allow_partial_fills=True
+                    ),
+                    routing=Routing(
+                        mode=RoutingMode.AUTO
+                    ),
+                    leverage=Leverage(
+                        enabled=False
+                    )
+                )
+            )
             
             # Get database session and place close order
             async for db in get_db():
-                result = await order_service.create_order(close_order_request, db)
-                if result.get("success"):
-                    logger.info(f"✅ Timestop market exit order placed: {result.get('order_ref')}")
+                result, ack, error = await order_service.create_order(close_order_request, db)
+                if result.success:
+                    logger.info(f"✅ Timestop market exit order placed: {result.order_ref}")
                 else:
-                    logger.error(f"❌ Failed to place timestop market exit order: {result.get('error')}")
+                    logger.error(f"❌ Failed to place timestop market exit order: {result.error}")
                 break  # Exit the async generator
                 
         except Exception as e:
