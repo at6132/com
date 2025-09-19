@@ -247,9 +247,18 @@ class ExitLeg(BaseModel):
     
     model_config = ConfigDict(extra="forbid")
 
+class TimeStop(BaseModel):
+    """Time-based stop loss configuration"""
+    enabled: bool = Field(default=False, description="Whether timestop is enabled")
+    duration_minutes: float = Field(description="Duration in minutes before automatic exit")
+    action: str = Field(default="MARKET_EXIT", description="Action to take: MARKET_EXIT, CANCEL_ALL, or BOTH")
+    
+    model_config = ConfigDict(extra="forbid")
+
 class ExitPlan(BaseModel):
     """Exit plan configuration"""
     legs: List[ExitLeg] = Field(min_length=1, description="Exit plan legs")
+    timestop: Optional[TimeStop] = Field(default=None, description="Time-based stop loss")
     
     model_config = ConfigDict(extra="forbid")
 

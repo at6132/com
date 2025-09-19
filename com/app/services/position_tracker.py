@@ -5,7 +5,7 @@ Tracks positions and orders with server-generated IDs and proper relationships
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
@@ -49,6 +49,9 @@ class Position:
     order_ref: Optional[str] = None     # Original order reference
     max_favorable: float = 0.0         # Best PnL during position lifecycle
     max_adverse: float = 0.0           # Worst PnL during position lifecycle
+    timestop_enabled: bool = False     # Whether timestop is enabled
+    timestop_expires_at: Optional[datetime] = None  # When timestop triggers
+    timestop_action: str = "MARKET_EXIT"  # What to do when timestop triggers
 
 @dataclass
 class Order:
@@ -499,6 +502,7 @@ class PositionTracker:
         while self.running:
             try:
                 await self._update_positions()
+                await self.check_timestops()  # Check for expired timestops
                 await asyncio.sleep(1.0)  # Ping every 1 second
             except Exception as e:
                 logger.error(f"Error in position tracking loop: {e}")
@@ -1759,6 +1763,173 @@ class PositionTracker:
         except Exception as e:
             logger.error(f"❌ Error getting all positions: {e}")
             return []
+
+    def set_timestop(self, position_id: str, duration_minutes: float, action: str = "MARKET_EXIT") -> bool:
+        """Set timestop for a position"""
+        try:
+            position = self.positions.get(position_id)
+            if not position:
+                logger.error(f"❌ Position {position_id} not found for timestop")
+                return False
+            
+            if position.status != PositionStatus.OPEN:
+                logger.error(f"❌ Cannot set timestop on closed position {position_id}")
+                return False
+            
+            # Calculate expiration time
+            expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
+            
+            # Update position with timestop info
+            position.timestop_enabled = True
+            position.timestop_expires_at = expires_at
+            position.timestop_action = action
+            
+            logger.info(f"⏰ Timestop set for position {position_id}: expires in {duration_minutes} minutes, action={action}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error setting timestop for position {position_id}: {e}")
+            return False
+
+    def cancel_timestop(self, position_id: str) -> bool:
+        """Cancel timestop for a position"""
+        try:
+            position = self.positions.get(position_id)
+            if not position:
+                logger.error(f"❌ Position {position_id} not found for timestop cancellation")
+                return False
+            
+            # Disable timestop
+            position.timestop_enabled = False
+            position.timestop_expires_at = None
+            position.timestop_action = "MARKET_EXIT"
+            
+            logger.info(f"⏰ Timestop cancelled for position {position_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error cancelling timestop for position {position_id}: {e}")
+            return False
+
+    async def check_timestops(self):
+        """Check for expired timestops and execute actions"""
+        try:
+            current_time = datetime.utcnow()
+            expired_positions = []
+            
+            # Find positions with expired timestops
+            for position_id, position in self.positions.items():
+                if (position.status == PositionStatus.OPEN and 
+                    position.timestop_enabled and 
+                    position.timestop_expires_at and 
+                    current_time >= position.timestop_expires_at):
+                    expired_positions.append(position)
+            
+            # Execute timestop actions for expired positions
+            for position in expired_positions:
+                await self._execute_timestop_action(position)
+                
+        except Exception as e:
+            logger.error(f"❌ Error checking timestops: {e}")
+
+    async def _execute_timestop_action(self, position: Position):
+        """Execute the timestop action for a position"""
+        try:
+            logger.info(f"⏰ TIMESTOP TRIGGERED for position {position.position_id} - Action: {position.timestop_action}")
+            
+            if position.timestop_action in ["MARKET_EXIT", "BOTH"]:
+                await self._timestop_market_exit(position)
+            
+            if position.timestop_action in ["CANCEL_ALL", "BOTH"]:
+                await self._timestop_cancel_orders(position)
+            
+            # Disable timestop after execution
+            position.timestop_enabled = False
+            position.timestop_expires_at = None
+            
+        except Exception as e:
+            logger.error(f"❌ Error executing timestop action for position {position.position_id}: {e}")
+
+    async def _timestop_market_exit(self, position: Position):
+        """Execute market exit for timestop"""
+        try:
+            from .orders import order_service
+            from ..core.database import get_db
+            
+            logger.info(f"⏰ Executing timestop market exit for position {position.position_id}")
+            
+            # Create market close order request
+            close_side = "SELL" if position.side == "BUY" else "BUY"
+            
+            close_order_request = {
+                "idempotency_key": f"timestop_{position.position_id}_{int(datetime.utcnow().timestamp())}",
+                "environment": {"sandbox": True},  # TODO: Get actual environment from position
+                "source": {
+                    "strategy_id": position.strategy_id or "timestop",
+                    "instance_id": "timestop",
+                    "owner": "system"
+                },
+                "order": {
+                    "instrument": {
+                        "class": "crypto_perp",
+                        "symbol": position.symbol
+                    },
+                    "side": close_side,
+                    "quantity": {
+                        "type": "contracts",
+                        "value": position.size
+                    },
+                    "order_type": "MARKET",
+                    "time_in_force": "IOC",
+                    "flags": {
+                        "post_only": False,
+                        "reduce_only": True,
+                        "hidden": False,
+                        "iceberg": {},
+                        "allow_partial_fills": True
+                    },
+                    "routing": {
+                        "mode": "AUTO"
+                    },
+                    "leverage": {
+                        "enabled": False
+                    }
+                }
+            }
+            
+            # Get database session and place close order
+            async for db in get_db():
+                result = await order_service.create_order(close_order_request, db)
+                if result.get("success"):
+                    logger.info(f"✅ Timestop market exit order placed: {result.get('order_ref')}")
+                else:
+                    logger.error(f"❌ Failed to place timestop market exit order: {result.get('error')}")
+                break  # Exit the async generator
+                
+        except Exception as e:
+            logger.error(f"❌ Error executing timestop market exit for position {position.position_id}: {e}")
+
+    async def _timestop_cancel_orders(self, position: Position):
+        """Cancel all orders for timestop"""
+        try:
+            logger.info(f"⏰ Cancelling all orders for timestop position {position.position_id}")
+            
+            # Get all orders for this position
+            order_ids = self.position_orders.get(position.position_id, [])
+            
+            for order_id in order_ids:
+                order = self.orders.get(order_id)
+                if order and order.status in [OrderStatus.OPEN, OrderStatus.PENDING]:
+                    # Update order status to cancelled
+                    order.status = OrderStatus.CANCELLED
+                    order.updated_at = datetime.utcnow()
+                    
+                    logger.info(f"✅ Cancelled order {order_id} due to timestop")
+            
+            logger.info(f"⏰ Cancelled {len(order_ids)} orders for timestop position {position.position_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error cancelling orders for timestop position {position.position_id}: {e}")
 
 # Global position tracker instance
 position_tracker = PositionTracker()

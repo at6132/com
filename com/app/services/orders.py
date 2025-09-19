@@ -7,6 +7,7 @@ import uuid
 import json
 import time
 import csv
+import asyncio
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -273,6 +274,21 @@ class OrderService:
                         )
                         
                         logger.info(f"📊 Position tracking: {position_id}, Entry order: {entry_order_id}")
+                        
+                        # Setup timestop if configured in exit plan
+                        if request.order.exit_plan and request.order.exit_plan.timestop and request.order.exit_plan.timestop.enabled:
+                            try:
+                                success = position_tracker.set_timestop(
+                                    position_id=position_id,
+                                    duration_minutes=request.order.exit_plan.timestop.duration_minutes,
+                                    action=request.order.exit_plan.timestop.action
+                                )
+                                if success:
+                                    logger.info(f"⏰ Timestop configured for position {position_id}: {request.order.exit_plan.timestop.duration_minutes} minutes, action={request.order.exit_plan.timestop.action}")
+                                else:
+                                    logger.warning(f"⚠️ Failed to setup timestop for position {position_id}")
+                            except Exception as e:
+                                logger.error(f"❌ Error setting up timestop for position {position_id}: {e}")
                         
                         # Send GUI event for new order
                         await self._send_gui_order_event(order, "ORDER_CREATED")
@@ -769,9 +785,17 @@ class OrderService:
                     # MARKET orders need current market price
                     try:
                         from .mexc_market_data import mexc_market_data
-                        market_data = await mexc_market_data.get_market_data(order.instrument.symbol)
-                        if market_data and 'last_price' in market_data:
-                            current_price = float(market_data['last_price'])
+                        
+                        # Ensure we're subscribed to this symbol for market data
+                        if order.instrument.symbol not in mexc_market_data.get_subscribed_symbols():
+                            logger.info(f"📊 Subscribing to {order.instrument.symbol} for market data")
+                            await mexc_market_data.subscribe_symbol(order.instrument.symbol)
+                            # Give it a moment to fetch initial data
+                            await asyncio.sleep(0.5)
+                        
+                        market_data = mexc_market_data.get_market_data(order.instrument.symbol)
+                        if market_data and hasattr(market_data, 'last_price') and market_data.last_price > 0:
+                            current_price = float(market_data.last_price)
                             logger.info(f"💰 Using market price for quantity calculation: ${current_price}")
                         else:
                             current_price = 1.0

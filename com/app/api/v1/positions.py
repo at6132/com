@@ -10,7 +10,8 @@ import logging
 from ...core.database import get_db
 from ...schemas.positions import (
     CreateSubOrderRequest, AmendSubOrderRequest, CancelSubOrderRequest,
-    ClosePositionRequest, PositionView, ListPositionsResponse, SubOrderView
+    ClosePositionRequest, SetTimeStopRequest, CancelTimeStopRequest,
+    PositionView, ListPositionsResponse, SubOrderView
 )
 from ...schemas.base import Ack
 
@@ -147,7 +148,7 @@ async def close_position(
             )
         
         # Determine close side based on position side
-        if position.side == "LONG":
+        if position.side == "BUY":
             close_side = "SELL"
         else:
             close_side = "BUY"
@@ -195,20 +196,24 @@ async def close_position(
         # Place the close order
         logger.info(f"📤 Placing close order: {close_quantity} {position.symbol} {close_side} @ {order_type}")
         
-        result = await order_service.create_order(close_order_request, db)
+        # Convert dict to CreateOrderRequest
+        from ...schemas.orders import CreateOrderRequest
+        close_request = CreateOrderRequest(**close_order_request)
         
-        if result.get("success"):
-            logger.info(f"✅ Close order placed successfully: {result.get('order_ref')}")
+        result, ack, error = await order_service.create_order(close_request, db)
+        
+        if result.success:
+            logger.info(f"✅ Close order placed successfully: {result.order_ref}")
             return Ack(
                 status="ACK",
                 received_at=datetime.now().isoformat(),
                 position_ref=position_ref,
-                order_ref=result.get("order_ref")
+                order_ref=result.order_ref
             )
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to place close order: {result.get('error')}"
+                detail=f"Failed to place close order: {result.error}"
             )
             
     except HTTPException:

@@ -8,7 +8,7 @@ from datetime import datetime
 
 from .base import (
     ExitLeg, PositionView, SubOrderView, 
-    Ack, ErrorEnvelope, Environment
+    Ack, ErrorEnvelope, Environment, TimeStop
 )
 
 # ============================================================================
@@ -48,6 +48,21 @@ class ClosePositionRequest(BaseModel):
     
     model_config = ConfigDict(extra="forbid")
 
+class SetTimeStopRequest(BaseModel):
+    """Set TimeStop Request - matches JSON schema exactly"""
+    idempotency_key: str = Field(min_length=8, max_length=200, description="Idempotency key")
+    environment: Environment = Field(description="Environment configuration")
+    timestop: TimeStop = Field(description="Time-based stop loss configuration")
+    
+    model_config = ConfigDict(extra="forbid")
+
+class CancelTimeStopRequest(BaseModel):
+    """Cancel TimeStop Request - matches JSON schema exactly"""
+    idempotency_key: str = Field(min_length=8, max_length=200, description="Idempotency key")
+    environment: Environment = Field(description="Environment configuration")
+    
+    model_config = ConfigDict(extra="forbid")
+
 # ============================================================================
 # RESPONSE SCHEMAS
 # ============================================================================
@@ -69,6 +84,16 @@ class CancelSubOrderResponse(BaseModel):
 
 class ClosePositionResponse(BaseModel):
     """Close Position Response - matches JSON schema exactly"""
+    # OneOf: Ack or ErrorEnvelope
+    pass
+
+class SetTimeStopResponse(BaseModel):
+    """Set TimeStop Response - matches JSON schema exactly"""
+    # OneOf: Ack or ErrorEnvelope
+    pass
+
+class CancelTimeStopResponse(BaseModel):
+    """Cancel TimeStop Response - matches JSON schema exactly"""
     # OneOf: Ack or ErrorEnvelope
     pass
 
@@ -131,5 +156,16 @@ class PositionQuery(BaseModel):
     """Position query parameters"""
     symbol: Optional[str] = Field(default=None, description="Filter by symbol")
     strategy_id: Optional[str] = Field(default=None, description="Filter by strategy")
+    
+    model_config = ConfigDict(extra="forbid")
+
+class TimeStopResult(BaseModel):
+    """Internal timestop operation result"""
+    success: bool
+    position_ref: Optional[str] = None
+    timestop_id: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    error: Optional[str] = None
+    error_code: Optional[str] = None
     
     model_config = ConfigDict(extra="forbid")
