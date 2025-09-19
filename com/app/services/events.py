@@ -5,7 +5,8 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from ..schemas.events import WSEvent, EventType
+from ..schemas.events import WSEvent
+from ..schemas.base import EventType
 from ..ws.hub import websocket_hub
 
 logger = logging.getLogger(__name__)

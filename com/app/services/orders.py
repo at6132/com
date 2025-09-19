@@ -1301,7 +1301,7 @@ class OrderService:
                                     quantity=broker_quantity,
                                     price=snapped_tp_price,
                                     strategy_id=order_request.source.strategy_id if hasattr(order_request, 'source') and order_request.source else "unknown",
-                                    order_ref=f"{order.order_ref}_tp"
+                                    order_ref=f"{order.order_ref}_tp{i+1}"
                                 )
                                 logger.info(f"📋 Tracked TP order: {tp_order_id}")
                                 
@@ -1312,7 +1312,7 @@ class OrderService:
                                     
                                     if original_monitored_order:
                                         await order_monitor.add_post_only_tp_for_monitoring(
-                                            order_ref=f"{order.order_ref}_tp",
+                                            order_ref=f"{order.order_ref}_tp{i+1}",
                                             symbol=order_request.instrument.symbol,
                                             side=close_side,
                                             quantity=broker_quantity,
@@ -1320,7 +1320,7 @@ class OrderService:
                                             position_id=position_id,
                                             original_monitored_order=original_monitored_order
                                         )
-                                        logger.info(f"🔍 Added post-only TP order {order.order_ref}_tp to monitoring")
+                                        logger.info(f"🔍 Added post-only TP order {order.order_ref}_tp{i+1} to monitoring")
                                     else:
                                         logger.warning(f"❌ Original monitored order not found for {order.order_ref}")
                                 except Exception as e:

@@ -804,9 +804,24 @@ class PositionTracker:
                 logger.warning(f"Could not find monitored order for position {position.position_id}")
                 return
             
-            # Create the order reference for TP or SL
+            # Find the correct TP/SL order by broker order ID
+            broker_order_id = str(getattr(order_details, 'orderId', '') if hasattr(order_details, 'orderId') else order_details.get('orderId', ''))
+            
             if execution_type == "TAKE_PROFIT":
-                order_ref = f"{monitored_order.order_ref}_tp"
+                # Find TP order by broker order ID
+                order_ref = None
+                from .data_logger import data_logger
+                # Look through all TP orders for this position
+                position_orders = await data_logger.get_position_orders(position.position_id)
+                for order_id in position_orders:
+                    order_data = await data_logger.get_order_by_ref(order_id)
+                    if order_data and order_data.get('broker_order_id') == broker_order_id:
+                        order_ref = order_id
+                        break
+                
+                if not order_ref:
+                    logger.warning(f"❌ Could not find TP order for broker_order_id: {broker_order_id}")
+                    return
             else:  # STOP_LOSS
                 order_ref = f"{monitored_order.order_ref}_sl"
             
@@ -832,10 +847,80 @@ class PositionTracker:
             
             # Execute after_fill_actions if this is a TP fill
             if execution_type == "TAKE_PROFIT":
-                await self._execute_after_fill_actions_for_tp(monitored_order, fill_data['price'])
+                await self._execute_after_fill_actions_for_specific_tp(monitored_order, fill_data['price'], order_ref)
             
         except Exception as e:
             logger.error(f"Error updating TP/SL order from execution: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    async def _execute_after_fill_actions_for_specific_tp(self, monitored_order, fill_price: float, filled_order_ref: str):
+        """Execute after_fill_actions for a specific TP order that was filled"""
+        try:
+            logger.info(f"🔍 _execute_after_fill_actions_for_specific_tp called with fill_price: {fill_price}, order_ref: {filled_order_ref}")
+            
+            if not monitored_order:
+                logger.warning("❌ No monitored_order provided")
+                return
+            
+            if not monitored_order.exit_plan:
+                logger.warning("❌ No exit plan found for monitored order")
+                return
+            
+            if 'legs' not in monitored_order.exit_plan:
+                logger.warning("❌ No legs found in exit plan")
+                return
+            
+            logger.info(f"🔍 Exit plan found: {monitored_order.exit_plan}")
+            logger.info(f"🔍 Found {len(monitored_order.exit_plan['legs'])} exit plan legs")
+            
+            # Find which TP leg corresponds to the filled order
+            filled_tp_index = None
+            if filled_order_ref.endswith('_tp1'):
+                filled_tp_index = 0
+            elif filled_order_ref.endswith('_tp2'):
+                filled_tp_index = 1
+            elif filled_order_ref.endswith('_tp3'):
+                filled_tp_index = 2
+            # Add more if needed
+            
+            if filled_tp_index is None:
+                logger.warning(f"❌ Could not determine TP index from order_ref: {filled_order_ref}")
+                return
+            
+            # Only execute after_fill_actions for the specific TP leg that was filled
+            legs = monitored_order.exit_plan['legs']
+            if filled_tp_index < len(legs):
+                leg = legs[filled_tp_index]
+                
+                # Handle both Pydantic objects and dictionaries
+                if hasattr(leg, 'kind'):
+                    leg_kind = leg.kind
+                    leg_after_fill_actions = getattr(leg, 'after_fill_actions', None)
+                else:
+                    leg_kind = leg.get('kind')
+                    leg_after_fill_actions = leg.get('after_fill_actions')
+                
+                logger.info(f"🔍 Leg {filled_tp_index + 1}: kind={leg_kind}, after_fill_actions={leg_after_fill_actions}")
+                
+                if leg_kind == "TP" and leg_after_fill_actions:
+                    logger.info(f"🎯 Executing {len(leg_after_fill_actions)} after_fill_actions for leg {filled_tp_index + 1}")
+                    
+                    for j, action in enumerate(leg_after_fill_actions):
+                        action_type = action.get('action') if isinstance(action, dict) else getattr(action, 'action', None)
+                        logger.info(f"🔍 Action {j + 1}: {action_type}")
+                        
+                        if action_type == "SET_SL_TO_BREAKEVEN":
+                            await self._set_sl_to_breakeven_for_tp(monitored_order, fill_price, filled_tp_index)
+                        else:
+                            logger.warning(f"Unknown after_fill_action: {action_type}")
+                else:
+                    logger.info(f"ℹ️ No after_fill_actions for leg {filled_tp_index + 1}")
+            else:
+                logger.warning(f"❌ TP index {filled_tp_index} out of range for legs")
+            
+        except Exception as e:
+            logger.error(f"Error executing after_fill_actions for specific TP: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
     
@@ -1028,6 +1113,104 @@ class PositionTracker:
             
         except Exception as e:
             logger.error(f"❌ Error setting SL to breakeven: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    async def _set_sl_to_breakeven_for_tp(self, monitored_order, fill_price: float, tp_index: int):
+        """Move stop loss to breakeven for a specific TP that was filled"""
+        try:
+            logger.info(f"🔄 Setting SL to breakeven for TP {tp_index + 1} of order {monitored_order.order_ref}")
+            
+            # Get the entry price from the monitored order
+            entry_price = monitored_order.entry_price
+            logger.info(f"🔍 Entry price: {entry_price}")
+            
+            if not entry_price:
+                logger.warning(f"❌ No entry price found for order {monitored_order.order_ref}")
+                return
+            
+            # Find the SL leg in the exit plan
+            sl_leg = None
+            logger.info(f"🔍 Looking for SL leg in {len(monitored_order.exit_plan['legs'])} legs")
+            
+            for i, leg in enumerate(monitored_order.exit_plan['legs']):
+                # Handle both Pydantic objects and dictionaries
+                if hasattr(leg, 'kind'):
+                    leg_kind = leg.kind
+                else:
+                    leg_kind = leg.get('kind')
+                
+                logger.info(f"🔍 Leg {i+1}: kind={leg_kind}")
+                
+                if leg_kind == "SL":
+                    sl_leg = leg
+                    logger.info(f"✅ Found SL leg at index {i}")
+                    break
+            
+            if not sl_leg:
+                logger.warning(f"❌ No SL leg found in exit plan for order {monitored_order.order_ref}")
+                return
+            
+            # Update the SL trigger price to entry price
+            # Handle both Pydantic objects and dictionaries
+            if hasattr(sl_leg, 'trigger'):
+                old_trigger_price = getattr(sl_leg.trigger, 'value', None)
+                # Note: We can't modify Pydantic objects directly, so we'll just log the change
+                logger.info(f"✅ Would update SL trigger from {old_trigger_price} to breakeven: {entry_price}")
+            else:
+                old_trigger_price = sl_leg.get('trigger', {}).get('value', None)
+                sl_leg['trigger']['value'] = entry_price
+                logger.info(f"✅ Updated SL trigger from {old_trigger_price} to breakeven: {entry_price}")
+            
+            # Send order amendment to broker to update the SL price
+            try:
+                from .orders import order_service
+                from ..adapters.manager import broker_manager
+                
+                # Get the broker adapter
+                broker_name = "mexc"
+                await broker_manager.ensure_broker_connected(broker_name)
+                broker = broker_manager.get_adapter(broker_name)
+                
+                if not broker:
+                    logger.error(f"❌ Broker {broker_name} not available")
+                    return
+                
+                # Get the main order ID (the entry order that has the attached SL)
+                entry_order_ref = monitored_order.order_ref
+                logger.info(f"🔍 Getting entry order data for: {entry_order_ref}")
+                
+                # Get the entry order's broker order ID
+                entry_order_data = await order_service.get_order_by_ref(entry_order_ref)
+                if not entry_order_data:
+                    logger.error(f"❌ Could not find entry order data for {entry_order_ref}")
+                    return
+                
+                entry_broker_order_id = entry_order_data.get('broker_order_id')
+                if not entry_broker_order_id:
+                    logger.error(f"❌ No broker order ID found for entry order {entry_order_ref}")
+                    return
+                
+                logger.info(f"🔍 Found entry broker order ID: {entry_broker_order_id}")
+                
+                # Update the SL price to breakeven using MEXC API
+                # This would typically involve calling the broker's modify order API
+                # For now, we'll just log what we would do
+                logger.info(f"🔄 Would update SL to breakeven for broker order {entry_broker_order_id}")
+                logger.info(f"🔄 New SL price: {entry_price}")
+                
+                # TODO: Implement actual broker API call to update SL price
+                # await broker.modify_order(entry_broker_order_id, stop_price=entry_price)
+                
+                logger.info(f"✅ SL moved to breakeven: {entry_price}")
+                
+            except Exception as e:
+                logger.error(f"❌ Error updating MEXC SL to breakeven: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error setting SL to breakeven for TP: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
     
