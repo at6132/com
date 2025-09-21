@@ -610,9 +610,30 @@ class PositionTracker:
                 
                 except Exception as e:
                     logger.error(f"Error updating position {position_id}: {e}")
+                    # Log to errors.csv
+                    from .error_logger import error_logger
+                    error_logger.log_position_error(
+                        error=e,
+                        position_id=position_id,
+                        strategy_id=position.strategy_id if position else "unknown",
+                        function="_update_single_position",
+                        context_data={
+                            "position_age": (datetime.utcnow() - position.created_at).total_seconds() if position else None,
+                            "broker_position_id": position.broker_position_id if position else None
+                        }
+                    )
         
         except Exception as e:
             logger.error(f"Error in _update_positions: {e}")
+            # Log to errors.csv
+            from .error_logger import error_logger
+            error_logger.log_position_error(
+                error=e,
+                position_id="multiple",
+                strategy_id="unknown",
+                function="_update_positions",
+                context_data={"positions_count": len(self.positions)}
+            )
     
     async def _determine_close_reason(self, position: Position) -> str:
         """Determine how a position was closed using MEXC order transactions and order details"""
@@ -1857,6 +1878,19 @@ class PositionTracker:
             
         except Exception as e:
             logger.error(f"❌ Error executing timestop action for position {position.position_id}: {e}")
+            # Log to errors.csv
+            from .error_logger import error_logger
+            error_logger.log_timestop_error(
+                error=e,
+                position_id=position.position_id,
+                action=position.timestop_action,
+                context_data={
+                    "timestop_expires_at": position.timestop_expires_at.isoformat() if position.timestop_expires_at else None,
+                    "position_side": position.side,
+                    "position_size": position.size,
+                    "position_symbol": position.symbol
+                }
+            )
 
     async def _timestop_market_exit(self, position: Position):
         """Execute market exit for timestop"""
@@ -1926,10 +1960,36 @@ class PositionTracker:
                     logger.error(f"❌ Exception type: {type(e)}")
                     import traceback
                     logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                    
+                    # Log to errors.csv
+                    from .error_logger import error_logger
+                    error_logger.log_timestop_error(
+                        error=e,
+                        position_id=position.position_id,
+                        action="market_exit",
+                        context_data={
+                            "close_side": close_side,
+                            "position_size": position.size,
+                            "position_symbol": position.symbol,
+                            "create_order_request_type": type(close_order_request).__name__
+                        }
+                    )
                     raise
                 
         except Exception as e:
             logger.error(f"❌ Error executing timestop market exit for position {position.position_id}: {e}")
+            # Log to errors.csv
+            from .error_logger import error_logger
+            error_logger.log_timestop_error(
+                error=e,
+                position_id=position.position_id,
+                action="market_exit",
+                context_data={
+                    "position_side": position.side,
+                    "position_size": position.size,
+                    "position_symbol": position.symbol
+                }
+            )
 
     async def _timestop_cancel_orders(self, position: Position):
         """Cancel all orders for timestop"""

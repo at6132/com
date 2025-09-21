@@ -380,6 +380,23 @@ class OrderService:
         except Exception as e:
             self.logger.error(f"Error creating order: {e}")
             await db.rollback()
+            
+            # Log to errors.csv
+            from .error_logger import error_logger
+            error_logger.log_order_error(
+                error=e,
+                order_ref="unknown",
+                strategy_id=request.source.strategy_id,
+                function="create_order",
+                context_data={
+                    "idempotency_key": request.idempotency_key,
+                    "symbol": request.order.instrument.symbol,
+                    "side": request.order.side,
+                    "order_type": request.order.order_type,
+                    "quantity": request.order.quantity.value
+                }
+            )
+            
             error = ErrorEnvelope(
                 error={
                     "code": "INTERNAL_ERROR",
