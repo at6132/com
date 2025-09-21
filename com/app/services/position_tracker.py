@@ -1886,7 +1886,7 @@ class PositionTracker:
                     ),
                     side=close_side,
                     quantity=Quantity(
-                        type="contracts",
+                        type="base_units",
                         value=position.size
                     ),
                     order_type=OrderType.MARKET,
@@ -1907,14 +1907,26 @@ class PositionTracker:
                 )
             )
             
+            # Debug logging
+            logger.info(f"🔍 Timestop CreateOrderRequest created: type={type(close_order_request)}, has idempotency_key={hasattr(close_order_request, 'idempotency_key')}")
+            logger.info(f"🔍 Timestop idempotency_key value: {close_order_request.idempotency_key}")
+            
             # Get database session and place close order
             async for db in get_db():
-                result, ack, error = await order_service.create_order(close_order_request, db)
-                if result.success:
-                    logger.info(f"✅ Timestop market exit order placed: {result.order_ref}")
-                else:
-                    logger.error(f"❌ Failed to place timestop market exit order: {result.error}")
-                break  # Exit the async generator
+                try:
+                    logger.info(f"🔍 About to call create_order with type: {type(close_order_request)}")
+                    result, ack, error = await order_service.create_order(close_order_request, db)
+                    if result.success:
+                        logger.info(f"✅ Timestop market exit order placed: {result.order_ref}")
+                    else:
+                        logger.error(f"❌ Failed to place timestop market exit order: {result.error}")
+                    break  # Exit the async generator
+                except Exception as e:
+                    logger.error(f"❌ Exception in create_order call: {e}")
+                    logger.error(f"❌ Exception type: {type(e)}")
+                    import traceback
+                    logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                    raise
                 
         except Exception as e:
             logger.error(f"❌ Error executing timestop market exit for position {position.position_id}: {e}")
