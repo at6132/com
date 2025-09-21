@@ -1914,17 +1914,17 @@ class PositionTracker:
                     owner="system"
                 ),
                 order=OrderRequest(
-                    instrument=Instrument(
-                        class_=InstrumentClass.CRYPTO_PERP,
-                        symbol=position.symbol
-                    ),
-                    side=close_side,
+                   instrument=Instrument(
+                       class_="crypto_perp",
+                       symbol=position.symbol
+                   ),
+                    side=close_side.value,
                     quantity=Quantity(
                         type="base_units",
                         value=position.size
                     ),
-                    order_type=OrderType.MARKET,
-                    time_in_force=TimeInForce.IOC,
+                    order_type="MARKET",
+                    time_in_force="IOC",
                     flags=Flags(
                         post_only=False,
                         reduce_only=True,
@@ -1933,7 +1933,7 @@ class PositionTracker:
                         allow_partial_fills=True
                     ),
                     routing=Routing(
-                        mode=RoutingMode.AUTO
+                        mode="AUTO"
                     ),
                     leverage=Leverage(
                         enabled=False
